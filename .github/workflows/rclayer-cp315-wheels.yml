@@ -1,0 +1,104 @@
+name: rclayer CPython 3.15 CPU wheels
+
+on:
+  push:
+    tags:
+      - "rclayer-cp315-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }} wheel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x86_64
+            runner: ubuntu-24.04
+            cmake_asset: linux-x86_64
+            cmake_bin: cmake-3.31.8-linux-x86_64/bin
+          - platform: linux-aarch64
+            runner: ubuntu-24.04-arm
+            cmake_asset: linux-aarch64
+            cmake_bin: cmake-3.31.8-linux-aarch64/bin
+          - platform: macos-arm64
+            runner: macos-14
+            cmake_asset: macos-universal
+            cmake_bin: cmake-3.31.8-macos-universal/CMake.app/Contents/bin
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.15.1"
+
+      - name: Install CMake
+        env:
+          CMAKE_ASSET: ${{ matrix.cmake_asset }}
+          CMAKE_BIN: ${{ matrix.cmake_bin }}
+        run: |
+          curl --fail --location --silent --show-error \
+            "https://github.com/Kitware/CMake/releases/download/v3.31.8/cmake-3.31.8-${CMAKE_ASSET}.tar.gz" \
+            --output "$RUNNER_TEMP/cmake.tar.gz"
+          tar -xzf "$RUNNER_TEMP/cmake.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/$CMAKE_BIN" >> "$GITHUB_PATH"
+
+      - name: Install Python and C++ build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ninja numpy==2.4.2 onnx==1.22.0 packaging setuptools wheel
+          cmake --version
+
+      - name: Build CPU wheel
+        env:
+          CMAKE_BUILD_PARALLEL_LEVEL: 4
+        run: |
+          python tools/ci_build/build.py \
+            --build_dir build \
+            --update \
+            --build \
+            --config Release \
+            --build_wheel \
+            --skip_tests \
+            --parallel
+          mkdir -p dist
+          find build -type f -name 'onnxruntime-1.31.0-cp315-*.whl' -exec cp {} dist/ \;
+          test -n "$(find dist -type f -name '*.whl' -print -quit)"
+
+      - name: Check wheel imports
+        run: |
+          python -m pip install --force-reinstall dist/*.whl
+          python -c "import onnxruntime; print(onnxruntime.get_device())"
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: wheels-${{ matrix.platform }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v3.0.0
+        with:
+          name: ONNX Runtime 1.31.0 (CPython 3.15 CPU)
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: dist/*.whl
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
