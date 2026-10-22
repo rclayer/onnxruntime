@@ -75,6 +75,7 @@ jobs:
       - name: Check wheel imports
         run: |
           python -m pip install --force-reinstall dist/*.whl
+          cd "$RUNNER_TEMP"
           python -c "import onnxruntime; print(onnxruntime.get_device())"
 
       - uses: actions/upload-artifact@v7.0.1
