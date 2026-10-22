@@ -26,7 +26,7 @@ jobs:
             cmake_asset: linux-aarch64
             cmake_bin: cmake-3.31.8-linux-aarch64/bin
           - platform: macos-arm64
-            runner: macos-14
+            runner: macos-15
             cmake_asset: macos-universal
             cmake_bin: cmake-3.31.8-macos-universal/CMake.app/Contents/bin
     steps:
